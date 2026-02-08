@@ -6,3 +6,9 @@ duckdns_token = "REPLACE_WITH_DUCKDNS_TOKEN"
 
 # Your DuckDNS subdomain (e.g., "my-minecraft-server")
 duckdns_domain = "REPLACE_WITH_SUBDOMAIN"
+
+# Your FRP dashboard credentials
+frp_dashboard_creds = {
+  user = "REPLACE_WITH_USERNAME"
+  pwd  = "REPLACE_WITH_PASSWORD"
+}

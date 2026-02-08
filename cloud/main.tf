@@ -36,31 +36,35 @@ resource "aws_lightsail_instance" "vpn_proxy" {
 
   provisioner "remote-exec" {
     inline = [
-      # A. STOP AUTO-UPDATES (Prevents the "Lock" Crash)
-      "echo 'Stopping auto-updates...'",
+      "echo 'Checking for swap...'",
+      "if [ ! -f /swapfile ]; then",
+      "  echo 'Creating 1GB Swapfile...'",
+      "  sudo fallocate -l 1G /swapfile",
+      "  sudo chmod 600 /swapfile",
+      "  sudo mkswap /swapfile",
+      "  sudo swapon /swapfile",
+      "  # Make it permanent",
+      "  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab",
+      "  # Tell Linux to use swap only when necessary",
+      "  echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf",
+      "  sudo sysctl -p",
+      "fi",
+
       "sudo systemctl stop unattended-upgrades",
       "sudo killall apt apt-get 2>/dev/null || true",
 
-      # B. WAIT FOR LOCKS (Double Safety)
-      "echo 'Waiting for apt locks...'",
-      "while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 2; done;",
-      "while sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do sleep 2; done;",
+      "if ! command -v docker &> /dev/null; then",
+      "  curl -fsSL https://get.docker.com -o get-docker.sh",
+      "  sudo sh get-docker.sh",
+      "  sudo usermod -aG docker ubuntu",
+      "fi",
 
-      # C. INSTALL DOCKER
-      "echo 'Installing Docker...'",
-      "curl -fsSL https://get.docker.com -o get-docker.sh",
-      "sudo sh get-docker.sh",
-      
-      # D. FIX PERMISSIONS (So you can use 'docker' later)
-      "sudo usermod -aG docker ubuntu",
-
-      # E. CONFIGURE FRP
-      "echo 'Configuring FRP...'",
+      # CONFIGURE FRP (with dashboard for monitoring) ---
       "sudo mkdir -p /etc/frp",
-      "echo 'bindPort = 7000\nauth.method = \"token\"\nauth.token = \"${var.auth_token}\"' | sudo tee /etc/frp/frps.toml",
-      
-      # F. START CONTAINERS
-      "echo 'Starting Containers...'",
+      "printf 'bindPort = 7000\n\nauth.method = \"token\"\nauth.token = \"%s\"\n\n[webServer]\naddr = \"0.0.0.0\"\nport = 7500\nuser = \"%s\"\npassword = \"%s\"\n' '${var.auth_token}' '${var.frp_dashboard_creds.user}' '${var.frp_dashboard_creds.pwd}' | sudo tee /etc/frp/frps.toml",
+
+      # Stop existing containers to force config reload on restart
+      "sudo docker rm -f frps duckdns 2>/dev/null || true",
       "sudo docker run -d --name frps --restart always --network host -v /etc/frp/frps.toml:/etc/frp/frps.toml snowdreamtech/frps",
       
       "sudo docker run -d --name duckdns --restart always --network host -e SUBDOMAINS=${var.duckdns_domain} -e TOKEN=${var.duckdns_token} lscr.io/linuxserver/duckdns:latest"
@@ -75,6 +79,12 @@ resource "aws_lightsail_static_ip" "vpn_static_ip" {
 resource "aws_lightsail_static_ip_attachment" "attach" {
   static_ip_name = aws_lightsail_static_ip.vpn_static_ip.name
   instance_name  = aws_lightsail_instance.vpn_proxy.name
+
+  lifecycle {
+    replace_triggered_by = [
+      aws_lightsail_instance.vpn_proxy
+    ]
+  }
 }
 
 resource "aws_lightsail_instance_public_ports" "firewall" {
@@ -117,6 +127,15 @@ variable "duckdns_token" {
 
 variable "duckdns_domain" {
   type = string
+}
+
+variable "frp_dashboard_creds" {
+  description = "FRP Dashboard Login"
+  type = object({
+    user = string
+    pwd  = string
+  })
+  sensitive = true
 }
 
 resource "local_file" "home_config" {
