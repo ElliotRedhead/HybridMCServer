@@ -1,0 +1,4 @@
+[General]
+# Pause server after 2 hours of no players
+pauseDelay = 7200
+pauseMessage = "Server is sleeping... join to wake up!"

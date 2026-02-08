@@ -1,0 +1,15 @@
+legacy*
+
+.env
+*.pem
+
+.terraform/
+*.tfvars
+*.tfstate
+*.tfstate.backup
+terraform.tfvars
+frpc.toml
+
+local/instances
+# Ignore private config overrides
+local/config-overrides/minecraft-private.env

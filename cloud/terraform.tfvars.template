@@ -1,0 +1,8 @@
+# The shared secret for FRP tunnel authentication (e.g. generate with `openssl rand -hex 16`)
+auth_token = "REPLACE_WITH_SECURE_TOKEN"
+
+# Your DuckDNS token (from duckdns.org)
+duckdns_token = "REPLACE_WITH_DUCKDNS_TOKEN"
+
+# Your DuckDNS subdomain (e.g., "my-minecraft-server")
+duckdns_domain = "REPLACE_WITH_SUBDOMAIN"
