@@ -50,6 +50,12 @@ services:
         RCON_PASSWORD: "${RCON_PASSWORD}"
         BACKUP_INTERVAL: "1h"
         PRUNE_BACKUPS_DAYS: 7
+        BACKUP_METHOD: restic
+        RESTIC_PASSWORD: "${RESTIC_PASSWORD}"
+        RESTIC_REPOSITORY: "/backups"
+      volumes:
+        - "./instances/${DATA_FOLDER}:/data"
+        - "./backups/${DATA_FOLDER}:/backups/"
 
   frpc:
     image: snowdreamtech/frpc
