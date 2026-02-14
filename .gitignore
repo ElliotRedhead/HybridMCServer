@@ -10,8 +10,10 @@ legacy*
 terraform.tfvars
 frpc.toml
 
+local/backups
+local/base-modpack.zip
+local/config-overrides/minecraft-private.env
+local/modpack_build
+local/modpack.zip
 local/instances
 # Ignore private config overrides
-local/config-overrides/minecraft-private.env
-
-local/backups/*

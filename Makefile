@@ -18,6 +18,7 @@ cloud-deploy: ## Apply Terraform changes (Auto-Approve)
 cloud-force-deploy: ## Force recreate the instance
 	cd $(TF_DIR) && terraform taint aws_lightsail_instance.vpn_proxy
 	cd $(TF_DIR) && terraform apply -auto-approve
+	$(MAKE) deploy-modpack
 
 # Local
 
@@ -28,6 +29,10 @@ local-up: ## Start local Minecraft, Backup & Tunnel
 .PHONY: frpc-logs
 frpc-logs: ## View logs for local frpc
 	cd local && docker-compose logs -f frpc
+
+.PHONY: deploy-modpack
+deploy-modpack: ## Build and upload the client modpack zip to Caddy
+	cd local && bash build-modpack.sh
 
 .PHONY: help
 help: ### Show this help message

@@ -4,12 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Server Status</title>
-  <style>body { font-family: sans-serif; text-align: center; margin-top: 50px; background-color: #121212; color: #ffffff; } ul { list-style-type: none; padding: 0; } li { background: #333; margin: 5px auto; padding: 10px; width: 200px; border-radius: 5px; }</style>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin-top: 50px; background-color: #121212; color: #ffffff; } 
+    ul { list-style-type: none; padding: 0; } 
+    li { background: #333; margin: 5px auto; padding: 10px; width: 200px; border-radius: 5px; }
+    .download-btn { background-color: #4caf50; color: white; padding: 15px 32px; text-decoration: none; font-size: 16px; border-radius: 5px; font-weight: bold; display: inline-block; margin-bottom: 10px; transition: background-color 0.3s; }
+    .download-btn:hover { background-color: #45a049; }
+    .instructions { font-size: 14px; color: #aaaaaa; max-width: 450px; margin: 0 auto 40px auto; line-height: 1.5; }
+  </style>
 </head>
 <body>
   <h1>Minecraft Server</h1>
   <h2>Status: <span id="status">Loading...</span></h2>
   <h3>Players: <span id="players">-</span></h3>
+  
+  <div style="margin: 40px 0;">
+    <a href="/modpack.zip" class="download-btn">Download Modpack</a>
+    <p class="instructions">To install: Open the CurseForge app, click <strong>"Create Custom Profile"</strong> at the top right, select the <strong>"Import"</strong> link, and choose this downloaded zip file.</p>
+  </div>
+
   <ul id="player-list"></ul>
   <script>
     async function checkStatus() {
@@ -18,10 +31,12 @@
         const data = await res.json();
         const playerListUl = document.getElementById("player-list");
         playerListUl.innerHTML = "";
+        
         if (data.online) {
           document.getElementById("status").innerText = "Online";
           document.getElementById("status").style.color = "#4caf50";
           document.getElementById("players").innerText = data.players.online + " / " + data.players.max;
+          
           if (data.players.list && data.players.list.length > 0) {
             data.players.list.forEach(player => {
               const li = document.createElement("li");
