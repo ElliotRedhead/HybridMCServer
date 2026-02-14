@@ -25,53 +25,93 @@ resource "aws_lightsail_instance" "vpn_proxy" {
   blueprint_id      = "ubuntu_22_04"
   bundle_id         = "nano_2_0"
   key_pair_name     = aws_lightsail_key_pair.vpn_key_pair.name
+}
+
+resource "null_resource" "server_setup" {
+  depends_on = [
+    aws_lightsail_instance.vpn_proxy,
+    aws_lightsail_static_ip_attachment.attach,
+    aws_lightsail_instance_public_ports.firewall
+  ]
+
+  triggers = {
+    instance_id = aws_lightsail_instance.vpn_proxy.id
+  }
 
   connection {
     type        = "ssh"
     user        = "ubuntu"
-    host        = self.public_ip_address
+    host        = aws_lightsail_static_ip.vpn_static_ip.ip_address
     private_key = tls_private_key.vpn_key.private_key_pem
     timeout     = "5m"
   }
 
+  provisioner "file" {
+    content     = templatefile("${path.module}/index.html.tpl", { duckdns_domain = var.duckdns_domain })
+    destination = "/home/ubuntu/index.html"
+  }
+
+  provisioner "file" {
+    content     = templatefile("${path.module}/Caddyfile.tpl", { duckdns_domain = var.duckdns_domain })
+    destination = "/home/ubuntu/Caddyfile"
+  }
+
   provisioner "remote-exec" {
     inline = [
-      "echo 'Checking for swap...'",
-      "if [ ! -f /swapfile ]; then",
-      "  echo 'Creating 1GB Swapfile...'",
-      "  sudo fallocate -l 1G /swapfile",
-      "  sudo chmod 600 /swapfile",
-      "  sudo mkswap /swapfile",
-      "  sudo swapon /swapfile",
-      "  # Make it permanent",
-      "  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab",
-      "  # Tell Linux to use swap only when necessary",
-      "  echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf",
-      "  sudo sysctl -p",
-      "fi",
+      <<-EOT
+      echo "Checking for swap..."
+      if [ ! -f /swapfile ]; then
+        echo "Creating 1GB Swapfile..."
+        sudo fallocate -l 1G /swapfile
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        # Make it permanent
+        echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab
+        # Tell Linux to use swap only when necessary
+        echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
+        sudo sysctl -p
+      fi
 
-      "sudo systemctl stop unattended-upgrades",
-      "sudo killall apt apt-get 2>/dev/null || true",
+      sudo systemctl stop unattended-upgrades
+      sudo killall apt apt-get 2>/dev/null || true
 
-      "if ! command -v docker &> /dev/null; then",
-      "  curl -fsSL https://get.docker.com -o get-docker.sh",
-      "  sudo sh get-docker.sh",
-      "  sudo usermod -aG docker ubuntu",
-      "fi",
+      if ! command -v docker &> /dev/null; then
+        curl -fsSL https://get.docker.com -o get-docker.sh
+        sudo sh get-docker.sh
+        sudo usermod -aG docker ubuntu
+      fi
 
-      # CONFIGURE FRP (with dashboard for monitoring) ---
-      "sudo mkdir -p /etc/frp",
-      "printf 'bindPort = 7000\n\nauth.method = \"token\"\nauth.token = \"%s\"\n\n[webServer]\naddr = \"0.0.0.0\"\nport = 7500\nuser = \"%s\"\npassword = \"%s\"\n' '${var.auth_token}' '${var.frp_dashboard_creds.user}' '${var.frp_dashboard_creds.pwd}' | sudo tee /etc/frp/frps.toml",
+      # Configure FRP (bound locally to 7501) ---
+      sudo mkdir -p /etc/frp
+      cat << 'EOF' | sudo tee /etc/frp/frps.toml
+      bindPort = 7000
+
+      auth.method = "token"
+      auth.token = "${var.auth_token}"
+
+      [webServer]
+      addr = "127.0.0.1"
+      port = 7501
+      user = "${var.frp_dashboard_creds.user}"
+      password = "${var.frp_dashboard_creds.pwd}"
+      EOF
+
+      sudo mkdir -p /opt/mc-status
+      sudo mkdir -p /opt/caddy
+      sudo mv /home/ubuntu/index.html /opt/mc-status/index.html
+      sudo mv /home/ubuntu/Caddyfile /opt/caddy/Caddyfile
+      sudo docker rm -f status-web 2>/dev/null || true
+      sudo docker run -d --name status-web --restart always --network host -v /opt/mc-status:/usr/share/caddy:ro -v /opt/caddy/Caddyfile:/etc/caddy/Caddyfile:ro caddy:alpine
 
       # Stop existing containers to force config reload on restart
-      "sudo docker rm -f frps duckdns 2>/dev/null || true",
-      "sudo docker run -d --name frps --restart always --network host -v /etc/frp/frps.toml:/etc/frp/frps.toml snowdreamtech/frps",
-      
-      "sudo docker run -d --name duckdns --restart always --network host -e SUBDOMAINS=${var.duckdns_domain} -e TOKEN=${var.duckdns_token} lscr.io/linuxserver/duckdns:latest"
+      sudo docker rm -f frps duckdns 2>/dev/null || true
+      sudo docker run -d --name frps --restart always --network host -v /etc/frp/frps.toml:/etc/frp/frps.toml snowdreamtech/frps
+      sudo docker run -d --name duckdns --restart always --network host -e SUBDOMAINS=${var.duckdns_domain} -e TOKEN=${var.duckdns_token} lscr.io/linuxserver/duckdns:latest
+      EOT
     ]
   }
 }
-
 resource "aws_lightsail_static_ip" "vpn_static_ip" {
   name = "minecraft-static-ip"
 }
@@ -100,8 +140,26 @@ resource "aws_lightsail_instance_public_ports" "firewall" {
 
   port_info {
     protocol  = "tcp"
+    from_port = 80
+    to_port   = 80
+  }
+
+  port_info {
+    protocol  = "tcp"
+    from_port = 443
+    to_port   = 443
+  }
+
+  port_info {
+    protocol  = "tcp"
     from_port = 7000
     to_port   = 7000
+  }
+
+  port_info {
+    protocol  = "tcp"
+    from_port = 7500
+    to_port   = 7500
   }
 
   port_info {
