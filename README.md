@@ -1,6 +1,6 @@
 # Hybrid Cloud Minecraft Infrastructure
 
-This project deploys a secure, Minecraft server using a Hybrid Cloud Architecture.
+This project deploys a secure Minecraft server using a Hybrid Cloud Architecture.
 
 Game Server: Runs locally, dockerized on your hardware.
 
@@ -8,21 +8,27 @@ Gateway: Runs on a cheap AWS Lightsail instance (provisioned with Terraform).
 
 Tunnel: Traffic is securely tunneled (FRP) from the Cloud to your local.
 
+Web Frontend: Serves a secure HTTPS server status page, a modpack download link, and a reverse-proxied management dashboard via Caddy.
+
 ## System Architecture
 
 ```mermaid
 graph LR
-    User([Minecraft Client]) -- 1. Resolve Domain --> DNS[DuckDNS Service]
+    User([Minecraft Client / Web User]) -- 1. Resolve Domain --> DNS[DuckDNS Service]
     DNS -- 2. Return Static IP --> User
 
     subgraph AWS [AWS Lightsail Gateway]
         IP[Static IP]
+        CADDY[Caddy Web Server :80/:443]
         FRP_S[FRP Server :7000]
-        FW[Lightsail Firewall :25565]
+        FW[Lightsail Firewall]
     end
 
     User -- 3. Connects to IP:25565 --> FW
+    User -- HTTPS Web / Modpack / Dashboard --> CADDY
+
     FW --> FRP_S
+    CADDY -- Reverse Proxy --> FRP_S
 
     subgraph Home [Home Server / Docker]
         FRP_C[FRP Client]
@@ -41,14 +47,21 @@ graph LR
 - Low cost (uses cheap cloud compute only for traffic forwarding).
 - Hides your home IP address.
 - Portable config (Infrastructure as Code).
+- Zero-config SSL/HTTPS via Caddy.
+- Automated Modpack distribution for seamless player onboarding.
+- Secure, encrypted access to the FRP management dashboard.
 
 ## Repository Structure
 
-cloud/ - Terraform code to provision the AWS Lightsail Gateway.
+cloud/ - Terraform code to provision the AWS Lightsail Gateway, Caddyfile, and static HTML templates.
 
 local/ - Docker Compose files to run the Minecraft Server & Tunnel Client.
 
-local/config-overrides/ - Game configuration (Whitelists, MOTD, etc.) & additional mods
+local/config-overrides/ - Game configuration (Whitelists, MOTD, etc.).
+
+local/client-mods/ - Extra client-side `.jar` mods to be injected into the distributed modpack.
+
+local/build-modpack.sh - Automation script to bundle the custom client modpack.
 
 ## Prerequisites
 
@@ -58,7 +71,7 @@ AWS CLI Installed: sudo apt install awscli
 
 Docker & Compose: Installed on your local machine.
 
-DuckDNS Account: A domain (e.g., myserver.duckdns.org) and a Token.
+DuckDNS Account: A domain (e.g., "myserver.duckdns.org") and a Token.
 
 AWS IAM User: With LightsailFullAccess permissions.
 
@@ -86,19 +99,21 @@ AWS IAM User: With LightsailFullAccess permissions.
 1. Configure credentials - Create a (preferably, named) profile for Terraform to use.
 
 ```bash
-aws configure --profile terraform-lightsail
+aws configure --profile "terraform-lightsail"
 ```
 
 Region: eu-west-2 (or your preference)
-Output: json 2. Configure Terraform variables - Create your secret variables file.
+Output: json
+
+2. Configure Terraform variables - Create your secret variables file.
 
 ```bash
 cp cloud/terraform.tfvars.template cloud/terraform.tfvars
 ```
 
-Edit cloud/terraform.tfvars and add your DuckDNS Token and Domain.
+Edit cloud/terraform.tfvars and add your DuckDNS Token, Domain, and Dashboard credentials.
 
-3. Deploy Infrastructure - Terraform will provision the server, install Docker, and start the tunnel server.
+3. Deploy Infrastructure - Terraform will provision the server, install Docker, set up Caddy, and start the tunnel server.
 
 ```bash
 cd cloud
@@ -137,20 +152,41 @@ Check Logs: `docker-compose logs -f`
 
 Wait for: Done! (Server Ready) and [ssh] start proxy success (Tunnel Ready).
 
+### Phase 3: Modpack Distribution
+
+To ensure your players have the exact mods and configs as your server:
+
+1. Download the base modpack zip (e.g., ATM10) directly from the CurseForge website.
+2. Place it in the `local/` directory and name it `base-modpack.zip`.
+3. Drop any extra client-side `.jar` files into `local/client-mods/`.
+4. Deploy the modpack to the web server:
+
+```bash
+make deploy-modpack
+```
+
+Players can now visit `https://yourdomain.duckdns.org` to check server status and download the compiled modpack.
+
 How to Connect
-Server Address: your-domain.duckdns.org
+Server Address: yourdomain.duckdns.org
 
 Port: Default (25565) - No port number needed in client.
 
 ## Management & Troubleshooting
+
+### Accessing the FRP Dashboard
+
+Your FRP tunnel traffic and connection health can be monitored securely via the web dashboard.
+
+1. Navigate to `https://yourdomain.duckdns.org:7500`.
+2. Log in using the `frp_dashboard_creds` defined in your `terraform.tfvars` file.
 
 ### SSH Access to Cloud Gateway
 
 Terraform generates a keypair automatically. To debug the cloud server:
 
 ```bash
-cd cloud
-ssh -i id_rsa.pem ubuntu@$(terraform output -raw public_ip)
+make cloud-ssh
 ```
 
 ### Managing Players (Ops/Whitelist)
@@ -169,19 +205,13 @@ docker-compose up -d
 
 ### How to Change Modpacks
 
-Switching from one modpack to another (e.g., Vanilla to All The Mods) requires clearing old mod files while preserving your world data.
+Switching from one modpack to another requires clearing old mod files while preserving your world data.
 
-Stop the server
-
-```bash
-docker-compose down
-```
-
-Update configuration - edit your docker-compose.yml (or your .env file if you used variables) to point to the new pack.
-
-e.g.
-CF_SLUG=better-mc-forge-bmc4 => CF_SLUG=all-the-mods-9. (Verify java version for the docker image in local/docker-compose.yml)
-DATA_FOLDER=bmfb4 => atm9
+1. Stop the server: `docker-compose down`
+2. Update `MODPACK_SLUG` and `DATA_FOLDER` in your `.env` file to point to the new pack.
+3. Download the new client zip from CurseForge and replace `local/base-modpack.zip`.
+4. Run `make deploy-modpack` to update the web download.
+5. Start the server: `docker-compose up -d`
 
 ### How to Restore World Backups
 
@@ -237,8 +267,8 @@ docker-compose up -d
 
 ### Common Issues
 
-"Connection Refused": Check if the Tunnel is up (`docker-compose logs frpc`).
+"Connection Refused": Check if the Tunnel is up (`make frpc-logs`).
 
 "Unknown Host": DNS propagation lag. Wait 5 mins or try the raw IP.
 
-Wrong IP in DuckDNS/Lightsail: Run terraform apply again to force an update.
+Wrong IP in DuckDNS/Lightsail: Run `make cloud-apply` again to force an update.
