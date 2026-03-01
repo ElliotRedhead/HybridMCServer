@@ -12,7 +12,8 @@ services:
       TYPE: "AUTO_CURSEFORGE"
       CF_API_KEY: "${CF_API_KEY}"
       CF_SLUG: "${MODPACK_SLUG}"
-      MEMORY: "10G"
+      REMOVE_OLD_MODS: "true"
+      REMOVE_OLD_MODS_DEPTH: 1
       RCON_PORT: 25575
       RCON_PASSWORD: "${RCON_PASSWORD}"
       MODS: "https://www.curseforge.com/minecraft/mc-mods/serverpauser"

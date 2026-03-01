@@ -13,6 +13,7 @@ frpc.toml
 local/backups
 local/base-modpack.zip
 local/config-overrides/minecraft-private.env
+local/manual-backups
 local/modpack_build
 local/modpack.zip
 local/instances
