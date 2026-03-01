@@ -1,8 +1,13 @@
+{
+    acme_ca "https://acme.zerossl.com/v2/DV90"
+    email "admin@${duckdns_domain}.duckdns.org"
+}
+
 ${duckdns_domain}.duckdns.org {
     root * /usr/share/caddy
     file_server
 }
 
 ${duckdns_domain}.duckdns.org:7500 {
-    reverse_proxy 127.0.0.1:7501
+    reverse_proxy "127.0.0.1:7501"
 }

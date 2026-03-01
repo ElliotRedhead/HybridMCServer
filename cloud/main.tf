@@ -66,9 +66,7 @@ resource "null_resource" "server_setup" {
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile
         sudo swapon /swapfile
-        # Make it permanent
         echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab
-        # Tell Linux to use swap only when necessary
         echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
         sudo sysctl -p
       fi
@@ -77,7 +75,7 @@ resource "null_resource" "server_setup" {
       sudo killall apt apt-get 2>/dev/null || true
 
       if ! command -v docker &> /dev/null; then
-        curl -fsSL https://get.docker.com -o get-docker.sh
+        curl -fsSL "https://get.docker.com" -o get-docker.sh
         sudo sh get-docker.sh
         sudo usermod -aG docker ubuntu
       fi
@@ -101,17 +99,49 @@ resource "null_resource" "server_setup" {
       sudo mkdir -p /opt/caddy
       sudo mv /home/ubuntu/index.html /opt/mc-status/index.html
       sudo mv /home/ubuntu/Caddyfile /opt/caddy/Caddyfile
+      
       sudo docker rm -f status-web 2>/dev/null || true
-      sudo docker run -d --name status-web --restart always --network host -v /opt/mc-status:/usr/share/caddy:ro -v /opt/caddy/Caddyfile:/etc/caddy/Caddyfile:ro caddy:alpine
+      sudo docker run -d --name status-web --restart always --network host \
+        -v /opt/mc-status:/usr/share/caddy:ro \
+        -v /opt/caddy/Caddyfile:/etc/caddy/Caddyfile:ro \
+        caddy:alpine
 
-      # Stop existing containers to force config reload on restart
+	  # Stop existing containers to force config reload on restart
       sudo docker rm -f frps duckdns 2>/dev/null || true
       sudo docker run -d --name frps --restart always --network host -v /etc/frp/frps.toml:/etc/frp/frps.toml snowdreamtech/frps
       sudo docker run -d --name duckdns --restart always --network host -e SUBDOMAINS=${var.duckdns_domain} -e TOKEN=${var.duckdns_token} lscr.io/linuxserver/duckdns:latest
+
+      # Setup Healthcheck Cron Job ---
+      cat << 'EOF' | sudo tee /usr/local/bin/healthcheck.sh
+      #!/bin/bash
+      FRP_RES=$(curl -s -u "${var.frp_dashboard_creds.user}:${var.frp_dashboard_creds.pwd}" "http://127.0.0.1:7501/api/proxy/tcp/minecraft")
+      
+      if echo "$FRP_RES" | grep -q '"status":"online"'; then
+          TUNNEL="online"
+          HOST="online"
+      else
+          TUNNEL="offline"
+          if ping -c 1 -W 2 "${var.duckdns_domain}.duckdns.org" >/dev/null 2>&1; then
+              HOST="online"
+          else
+              HOST="offline"
+          fi
+      fi
+
+      echo "{\"host\": \"$HOST\", \"tunnel\": \"$TUNNEL\"}" > /opt/mc-status/health.json
+      chmod 644 /opt/mc-status/health.json
+      EOF
+      
+      sudo chmod +x /usr/local/bin/healthcheck.sh
+      echo "* * * * * root /usr/local/bin/healthcheck.sh" | sudo tee /etc/cron.d/mc-healthcheck
+      sudo systemctl restart cron
+      
+      sudo /usr/local/bin/healthcheck.sh
       EOT
     ]
   }
 }
+
 resource "aws_lightsail_static_ip" "vpn_static_ip" {
   name = "minecraft-static-ip"
 }
