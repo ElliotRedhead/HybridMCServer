@@ -2,8 +2,14 @@ services:
   minecraft:
     image: "itzg/minecraft-server:java21"
     container_name: "minecraft"
+    restart: unless-stopped
     ports:
       - "25565:25565"
+    deploy:
+      resources:
+        limits:
+          memory: 12.5G    # Absolute ceiling to protect SSH/Host OS
+          cpus: '3.0'    # Limits Java to 3 cores (adjust based on your CPU)
     env_file:
       - ./config-overrides/minecraft-public.env  # Load first
       - ./config-overrides/minecraft-private.env # Load second (Can include sensitive info)
@@ -14,6 +20,8 @@ services:
       CF_SLUG: "${MODPACK_SLUG}"
       REMOVE_OLD_MODS: "true"
       REMOVE_OLD_MODS_DEPTH: 1
+      INIT_MEMORY: "10G"
+      MAX_MEMORY: "10G"
       RCON_PORT: 25575
       RCON_PASSWORD: "${RCON_PASSWORD}"
       MODS: "https://www.curseforge.com/minecraft/mc-mods/serverpauser"
@@ -23,11 +31,10 @@ services:
         -XX:+ParallelRefProcEnabled
         -XX:MaxGCPauseMillis=200
         -XX:+UnlockExperimentalVMOptions
-        -XX:+DisableExplicitGC
         -XX:+AlwaysPreTouch
         -XX:G1NewSizePercent=30
-        -XX:G1MaxNewSizePercent=40
-        -XX:G1HeapRegionSize=8M
+        -XX:G1MaxNewSizePercent=60
+        -XX:G1HeapRegionSize=16M
         -XX:G1ReservePercent=20
         -XX:G1HeapWastePercent=5
         -XX:G1MixedGCCountTarget=4
@@ -37,6 +44,7 @@ services:
         -XX:SurvivorRatio=32
         -XX:+PerfDisableSharedMem
         -XX:MaxTenuringThreshold=1
+        -XX:+UseStringDeduplication
 
     volumes:
       - "./instances/${DATA_FOLDER}:/data"
@@ -45,6 +53,7 @@ services:
   backup:
       image: itzg/mc-backup
       container_name: "minecraft-backup"
+      restart: unless-stopped
       environment:
         RCON_HOST: minecraft
         RCON_PORT: 25575
@@ -55,13 +64,13 @@ services:
         RESTIC_PASSWORD: "${RESTIC_PASSWORD}"
         RESTIC_REPOSITORY: "/backups"
       volumes:
-        - "./instances/${DATA_FOLDER}:/data"
+        - "./instances/${DATA_FOLDER}:/data:ro"
         - "./backups/${DATA_FOLDER}:/backups/"
 
   frpc:
     image: snowdreamtech/frpc
     container_name: frpc
-    restart: always
+    restart: unless-stopped
     volumes:
       - ./frpc.toml:/etc/frp/frpc.toml
     network_mode: "host"
