@@ -38,6 +38,16 @@ local-up: ## Start local Minecraft, Backup & Tunnel
 	cd local && docker compose up -d
 	$(MAKE) cloud-force-refresh
 
+.PHONY: mc-version
+mc-version: ## Outputs the current CurseForge modpack version
+	@echo "Checking modpack version..."
+	# O(1) - Sources the environment file directly into the current Make shell execution
+	@if [ -f "./local/instances/$(DATA_FOLDER)/.install-curseforge.env" ]; then \
+		. "./local/instances/$(DATA_FOLDER)/.install-curseforge.env"; \
+		echo "$$MODPACK_NAME (v$$MODPACK_VERSION)"; \
+	else \
+		echo "Modpack info file not found. Has the server started yet?"; \
+	fi
 
 .PHONY: mc-backup
 mc-backup: ## Create a manual pre-update tarball of the world and configs
