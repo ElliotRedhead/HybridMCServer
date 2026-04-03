@@ -1,5 +1,4 @@
 {
-    acme_ca "https://acme.zerossl.com/v2/DV90"
     email "admin@${duckdns_domain}.duckdns.org"
 }
 

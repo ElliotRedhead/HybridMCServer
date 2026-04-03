@@ -60,8 +60,10 @@ resource "null_resource" "server_setup" {
     inline = [
       <<-EOT
       set -e
+
       # 1. Wait for cloud-init (Prevents apt-get lock errors)
       cloud-init status --wait
+
       # 2. Install Docker if missing
       if ! command -v docker > /dev/null 2>&1; then
         curl -fsSL "https://get.docker.com" -o get-docker.sh
@@ -70,10 +72,9 @@ resource "null_resource" "server_setup" {
       fi
 
       # 3. Create Directories
-      sudo mkdir -p /etc/frp /opt/mc-status /opt/caddy
+      sudo mkdir -p /etc/frp /opt/mc-status /opt/caddy/data /opt/caddy/config
 
       # 4. Write FRPS Config
-      # Use quoted EOF to prevent local shell interpolation
       sudo tee /etc/frp/frps.toml << "EOF"
       bindPort = 7000
       auth.method = "token"
@@ -87,44 +88,66 @@ resource "null_resource" "server_setup" {
 EOF
 
       # 5. Move UI files
-      [ -f /home/ubuntu/index.html ] && sudo mv /home/ubuntu/index.html /opt/mc-status/index.html
-      [ -f /home/ubuntu/Caddyfile ] && sudo mv /home/ubuntu/Caddyfile /opt/caddy/Caddyfile
+      [ -f "/home/ubuntu/index.html" ] && sudo mv "/home/ubuntu/index.html" "/opt/mc-status/index.html"
+      [ -f "/home/ubuntu/Caddyfile" ] && sudo mv "/home/ubuntu/Caddyfile" "/opt/caddy/Caddyfile"
 
       # 6. Start Containers
       sudo docker rm -f status-web frps duckdns 2>/dev/null || true
-      sudo docker run -d --name status-web --restart always --network host -v /opt/mc-status:/usr/share/caddy:ro -v /opt/caddy/Caddyfile:/etc/caddy/Caddyfile:ro caddy:alpine
-      sudo docker run -d --name frps --restart always --network host -v /etc/frp/frps.toml:/etc/frp/frps.toml snowdreamtech/frps
+      
+      sudo docker run -d --name status-web --restart always --network host \
+        -v "/opt/mc-status:/usr/share/caddy:ro" \
+        -v "/opt/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+        -v "/opt/caddy/data:/data" \
+        -v "/opt/caddy/config:/config" \
+        caddy:alpine
+      sleep 3
+
+      sudo docker run -d --name frps --restart always --network host -v "/etc/frp/frps.toml:/etc/frp/frps.toml" snowdreamtech/frps
+      sleep 3
+
       sudo docker run -d --name duckdns --restart always --network host -e SUBDOMAINS="${var.duckdns_domain}" -e TOKEN="${var.duckdns_token}" lscr.io/linuxserver/duckdns:latest
+      sleep 3
 
       # 7. Setup Healthcheck Script
-      sudo tee /usr/local/bin/healthcheck.sh << "EOF"
-      #!/bin/bash
-      FRP_RES=$(curl -s -u "${var.frp_dashboard_creds.user}:${var.frp_dashboard_creds.pwd}" "http://127.0.0.1:7501/api/proxy/tcp/minecraft")
+      sudo tee "/usr/local/bin/healthcheck.sh" << "EOF"
+#!/bin/bash
+FRP_RES=$(curl -s -u "${var.frp_dashboard_creds.user}:${var.frp_dashboard_creds.pwd}" "http://127.0.0.1:7501/api/proxy/tcp/minecraft")
 
-      if echo "$FRP_RES" | grep -q "\"status\":\"online\""; then
-          TUNNEL="online"
-          HOST="online"
-      else
-          TUNNEL="offline"
-          if ping -c 1 -W 2 "${var.duckdns_domain}.duckdns.org" >/dev/null 2>&1; then
-              HOST="online"
-          else
-              HOST="offline"
-          fi
-      fi
+if echo "$FRP_RES" | grep -q "\"status\":\"online\""; then
+    TUNNEL="online"
+    HOST="online"
+else
+    TUNNEL="offline"
+    if ping -c 1 -W 2 "${var.duckdns_domain}.duckdns.org" >/dev/null 2>&1; then
+        HOST="online"
+    else
+        HOST="offline"
+    fi
+fi
 
-      echo "{\"host\": \"$HOST\", \"tunnel\": \"$TUNNEL\"}" > /opt/mc-status/health.json
-      chmod 644 /opt/mc-status/health.json
-      EOF
+echo "{\"host\": \"$HOST\", \"tunnel\": \"$TUNNEL\"}" > "/opt/mc-status/health.json"
+chmod 644 "/opt/mc-status/health.json"
+EOF
 
-      sudo chmod +x /usr/local/bin/healthcheck.sh
-      echo "* * * * * root /usr/local/bin/healthcheck.sh" | sudo tee /etc/cron.d/mc-healthcheck
+      sudo chmod +x "/usr/local/bin/healthcheck.sh"
+      echo "* * * * * root /usr/local/bin/healthcheck.sh" | sudo tee "/etc/cron.d/mc-healthcheck"
       sudo systemctl restart cron
-      sudo /usr/local/bin/healthcheck.sh
+      sudo "/usr/local/bin/healthcheck.sh"
       EOT
     ]
   }
+
+  # 8. Push Local Modpack Version to Cloud
+  provisioner "local-exec" {
+    command = "make -C ../ cloud-refresh-modpack-version"
+  }
+
+  # 9. Build and deploy modpack.zip to cloud
+  provisioner "local-exec" {
+    command = "make -C ../ deploy-modpack"
+  }
 }
+
 
 resource "aws_lightsail_static_ip" "vpn_static_ip" {
   name = "minecraft-static-ip"

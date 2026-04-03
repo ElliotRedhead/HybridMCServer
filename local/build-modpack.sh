@@ -87,5 +87,4 @@ scp -o "StrictHostKeyChecking=no" -i "../cloud/id_rsa.pem" "modpack.zip" "ubuntu
 ssh -o "StrictHostKeyChecking=no" -i "../cloud/id_rsa.pem" "ubuntu@${CLOUD_IP}" "sudo mv /home/ubuntu/modpack.zip /opt/mc-status/modpack.zip && sudo chmod 644 /opt/mc-status/modpack.zip" || pause_and_exit "Error: SSH file move failed."
 
 echo "Deployment complete! Verify at https://<your_domain_here>/modpack.zip"
-echo "Press Enter to exit..."
-read -r
+exit 0

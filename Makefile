@@ -31,6 +31,19 @@ cloud-force-refresh: ## Force the cloud gateway to update status
 	@echo "Forcing status refresh on $(GET_IP)..."
 	ssh -o "StrictHostKeyChecking=no" -i $(KEY_FILE) $(SSH_USER)@$(GET_IP) "sudo /usr/local/bin/healthcheck.sh"
 
+.PHONY: cloud-refresh-modpack-version
+cloud-refresh-modpack-version: ## Pushes the modpack version to the AWS webserver
+	@echo "Uploading modpack version to AWS..."
+	@if [ -f "./local/instances/$(DATA_FOLDER)/.install-curseforge.env" ]; then \
+		. "./local/instances/$(DATA_FOLDER)/.install-curseforge.env"; \
+		echo "{\"name\": \"$$MODPACK_NAME\", \"version\": \"$$MODPACK_VERSION\"}" > /tmp/modpack.json; \
+		scp -i "$(KEY_FILE)" "/tmp/modpack.json" "$(SSH_USER)@$(GET_IP):/home/ubuntu/modpack.json"; \
+		ssh -i "$(KEY_FILE)" "$(SSH_USER)@$(GET_IP)" "sudo mv /home/ubuntu/modpack.json /opt/mc-status/modpack.json && sudo chmod 644 /opt/mc-status/modpack.json"; \
+		echo "Successfully updated modpack.json on the cloud server."; \
+	else \
+		echo "Modpack info file not found. Cannot push version."; \
+	fi
+
 # --- Local & Minecraft Targets ---
 
 .PHONY: local-up
@@ -41,7 +54,6 @@ local-up: ## Start local Minecraft, Backup & Tunnel
 .PHONY: mc-version
 mc-version: ## Outputs the current CurseForge modpack version
 	@echo "Checking modpack version..."
-	# O(1) - Sources the environment file directly into the current Make shell execution
 	@if [ -f "./local/instances/$(DATA_FOLDER)/.install-curseforge.env" ]; then \
 		. "./local/instances/$(DATA_FOLDER)/.install-curseforge.env"; \
 		echo "$$MODPACK_NAME (v$$MODPACK_VERSION)"; \
@@ -71,6 +83,14 @@ mc-update: mc-backup ## Backup, pull latest image, and restart MC (triggers modp
 	cd local && docker compose pull minecraft
 	cd local && docker compose up -d
 	@echo "Update triggered. Monitor with 'make mc-logs'"
+	@docker logs -f minecraft | while read line; do \
+		echo "$$line"; \
+		if echo "$$line" | grep -q "Starting Minecraft server"; then \
+			echo "Update complete. Syncing new version to cloud..."; \
+			$(MAKE) cloud-refresh-modpack-version; \
+			break; \
+		fi; \
+	done
 
 .PHONY: mc-logs
 mc-logs: ## View logs for the Minecraft server
@@ -108,4 +128,4 @@ deploy-modpack: ## Build and upload the client modpack zip to Caddy
 
 .PHONY: help
 help: ## Show this help message
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@awk 'BEGIN {FS = ":.*## "}; /^[a-zA-Z_-]+:.*## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST) | sort

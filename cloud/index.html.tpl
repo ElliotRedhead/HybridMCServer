@@ -37,6 +37,7 @@
   <h3>Players: <span id="players">-</span></h3>
   
   <div style="margin: 40px 0;">
+	<p>Modpack: <span id="modpack-info">Loading...</span></p>
     <a href="/modpack.zip" class="download-btn">Download Modpack</a>
     <p class="instructions">To install: Open the CurseForge app, click <strong>"Create Custom Profile"</strong> at the top right, select the <strong>"Import"</strong> link, and choose this downloaded zip file.</p>
   </div>
@@ -44,7 +45,16 @@
   <ul id="player-list"></ul>
   
   <script>
-    async function checkStatus() {
+async function checkStatus() {
+      try {
+        const packRes = await fetch("/modpack.json");
+        const packData = await packRes.json();
+        document.getElementById("modpack-info").innerText = packData.name + " (v" + packData.version + ")";
+      } catch (err) {
+        document.getElementById("modpack-info").innerText = "Unknown";
+        console.warn("Could not fetch modpack.json");
+      }
+
       try {
         let hostOnline = false;
         let tunnelOnline = false;
