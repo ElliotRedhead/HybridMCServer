@@ -59,32 +59,23 @@ resource "null_resource" "server_setup" {
   provisioner "remote-exec" {
     inline = [
       <<-EOT
-      echo "Checking for swap..."
-      if [ ! -f /swapfile ]; then
-        echo "Creating 1GB Swapfile..."
-        sudo fallocate -l 1G /swapfile
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
-        echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab
-        echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
-        sudo sysctl -p
-      fi
-
-      sudo systemctl stop unattended-upgrades
-      sudo killall apt apt-get 2>/dev/null || true
-
-      if ! command -v docker &> /dev/null; then
+      set -e
+      # 1. Wait for cloud-init (Prevents apt-get lock errors)
+      cloud-init status --wait
+      # 2. Install Docker if missing
+      if ! command -v docker > /dev/null 2>&1; then
         curl -fsSL "https://get.docker.com" -o get-docker.sh
         sudo sh get-docker.sh
         sudo usermod -aG docker ubuntu
       fi
 
-      # Configure FRP (bound locally to 7501) ---
-      sudo mkdir -p /etc/frp
-      cat << 'EOF' | sudo tee /etc/frp/frps.toml
-      bindPort = 7000
+      # 3. Create Directories
+      sudo mkdir -p /etc/frp /opt/mc-status /opt/caddy
 
+      # 4. Write FRPS Config
+      # Use quoted EOF to prevent local shell interpolation
+      sudo tee /etc/frp/frps.toml << "EOF"
+      bindPort = 7000
       auth.method = "token"
       auth.token = "${var.auth_token}"
 
@@ -93,30 +84,24 @@ resource "null_resource" "server_setup" {
       port = 7501
       user = "${var.frp_dashboard_creds.user}"
       password = "${var.frp_dashboard_creds.pwd}"
-      EOF
+EOF
 
-      sudo mkdir -p /opt/mc-status
-      sudo mkdir -p /opt/caddy
-      sudo mv /home/ubuntu/index.html /opt/mc-status/index.html
-      sudo mv /home/ubuntu/Caddyfile /opt/caddy/Caddyfile
-      
-      sudo docker rm -f status-web 2>/dev/null || true
-      sudo docker run -d --name status-web --restart always --network host \
-        -v /opt/mc-status:/usr/share/caddy:ro \
-        -v /opt/caddy/Caddyfile:/etc/caddy/Caddyfile:ro \
-        caddy:alpine
+      # 5. Move UI files
+      [ -f /home/ubuntu/index.html ] && sudo mv /home/ubuntu/index.html /opt/mc-status/index.html
+      [ -f /home/ubuntu/Caddyfile ] && sudo mv /home/ubuntu/Caddyfile /opt/caddy/Caddyfile
 
-	  # Stop existing containers to force config reload on restart
-      sudo docker rm -f frps duckdns 2>/dev/null || true
+      # 6. Start Containers
+      sudo docker rm -f status-web frps duckdns 2>/dev/null || true
+      sudo docker run -d --name status-web --restart always --network host -v /opt/mc-status:/usr/share/caddy:ro -v /opt/caddy/Caddyfile:/etc/caddy/Caddyfile:ro caddy:alpine
       sudo docker run -d --name frps --restart always --network host -v /etc/frp/frps.toml:/etc/frp/frps.toml snowdreamtech/frps
-      sudo docker run -d --name duckdns --restart always --network host -e SUBDOMAINS=${var.duckdns_domain} -e TOKEN=${var.duckdns_token} lscr.io/linuxserver/duckdns:latest
+      sudo docker run -d --name duckdns --restart always --network host -e SUBDOMAINS="${var.duckdns_domain}" -e TOKEN="${var.duckdns_token}" lscr.io/linuxserver/duckdns:latest
 
-      # Setup Healthcheck Cron Job ---
-      cat << 'EOF' | sudo tee /usr/local/bin/healthcheck.sh
+      # 7. Setup Healthcheck Script
+      sudo tee /usr/local/bin/healthcheck.sh << "EOF"
       #!/bin/bash
       FRP_RES=$(curl -s -u "${var.frp_dashboard_creds.user}:${var.frp_dashboard_creds.pwd}" "http://127.0.0.1:7501/api/proxy/tcp/minecraft")
-      
-      if echo "$FRP_RES" | grep -q '"status":"online"'; then
+
+      if echo "$FRP_RES" | grep -q "\"status\":\"online\""; then
           TUNNEL="online"
           HOST="online"
       else
@@ -131,11 +116,10 @@ resource "null_resource" "server_setup" {
       echo "{\"host\": \"$HOST\", \"tunnel\": \"$TUNNEL\"}" > /opt/mc-status/health.json
       chmod 644 /opt/mc-status/health.json
       EOF
-      
+
       sudo chmod +x /usr/local/bin/healthcheck.sh
       echo "* * * * * root /usr/local/bin/healthcheck.sh" | sudo tee /etc/cron.d/mc-healthcheck
       sudo systemctl restart cron
-      
       sudo /usr/local/bin/healthcheck.sh
       EOT
     ]
@@ -233,4 +217,15 @@ resource "local_file" "home_config" {
   })
   filename = "${path.module}/../local/frpc.toml"
   file_permission = "0600"
+}
+
+resource "null_resource" "restart_local_frpc" {
+  triggers = {
+    config_hash = local_file.home_config.id
+  }
+
+  provisioner "local-exec" {
+    # Sends a restart signal to the local Docker daemon
+    command = "docker compose -f ../local/docker-compose.yml restart frpc"
+  }
 }

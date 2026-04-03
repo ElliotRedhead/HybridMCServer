@@ -8,6 +8,10 @@ export
 
 # --- Cloud Targets ---
 
+.PHONY: cloud-ip
+cloud-ip: ## Output the public IP of the Lightsail instance
+	@echo "$(GET_IP)"
+
 .PHONY: cloud-ssh
 cloud-ssh: ## SSH into the Lightsail instance
 	@echo "Connecting to $(GET_IP)..."
@@ -21,7 +25,6 @@ cloud-deploy: ## Apply Terraform changes (Auto-Approve)
 cloud-force-deploy: ## Force recreate the instance
 	cd $(TF_DIR) && terraform taint aws_lightsail_instance.vpn_proxy
 	cd $(TF_DIR) && terraform apply -auto-approve
-	$(MAKE) deploy-modpack
 
 .PHONY: cloud-force-refresh
 cloud-force-refresh: ## Force the cloud gateway to update status
@@ -62,6 +65,26 @@ mc-update: mc-backup ## Backup, pull latest image, and restart MC (triggers modp
 .PHONY: mc-logs
 mc-logs: ## View logs for the Minecraft server
 	cd local && docker compose logs -f minecraft
+
+.PHONY: mc-players
+mc-players: ## List currently online players
+	cd local && docker compose exec -i minecraft rcon-cli list
+
+.PHONY: mc-playtime
+mc-playtime: ## Calculate and display total playtime for all players
+	@echo "Fetching player playtime statistics..."
+	@for file in "./local/instances/$(DATA_FOLDER)/world/stats/"*.json; do \
+		if [ -f "$$file" ]; then \
+			uuid=$$(basename "$$file" ".json"); \
+			ticks=$$(jq -r ".stats.\"minecraft:custom\".\"minecraft:play_time\" // empty" "$$file"); \
+			if [ -n "$$ticks" ]; then \
+				hours=$$(awk "BEGIN {printf \"%.2f\", $$ticks / 72000}"); \
+				name=$$(curl -s "https://sessionserver.mojang.com/session/minecraft/profile/$$uuid" | jq -r ".name" 2>/dev/null); \
+				if [ -z "$$name" ] || [ "$$name" = "null" ]; then name="$$uuid"; fi; \
+				printf "\033[36m%-20s\033[0m %s hours\n" "$$name" "$$hours"; \
+			fi; \
+		fi; \
+	done
 
 .PHONY: frpc-logs
 frpc-logs: ## View logs for local frpc
