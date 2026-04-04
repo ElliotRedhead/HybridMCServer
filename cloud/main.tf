@@ -148,6 +148,30 @@ EOF
   }
 }
 
+resource "null_resource" "upload_favicon" {
+  count = fileexists("${path.module}/favicon.ico") ? 1 : 0
+  depends_on = [null_resource.server_setup]
+
+  connection {
+    type        = "ssh"
+    user        = "ubuntu"
+    host        = aws_lightsail_static_ip.vpn_static_ip.ip_address
+    private_key = tls_private_key.vpn_key.private_key_pem
+    timeout     = "5m"
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/favicon.ico"
+    destination = "/home/ubuntu/favicon.ico"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo mv /home/ubuntu/favicon.ico /opt/mc-status/favicon.ico",
+      "sudo chmod 644 /opt/mc-status/favicon.ico"
+    ]
+  }
+}
 
 resource "aws_lightsail_static_ip" "vpn_static_ip" {
   name = "minecraft-static-ip"

@@ -10,9 +10,12 @@ legacy*
 terraform.tfvars
 frpc.toml
 
+cloud/favicon.ico
+
 local/backups
 local/base-modpack.zip
 local/config-overrides/minecraft-private.env
+local/config-overrides/server-icon.png
 local/manual-backups
 local/modpack_build
 local/modpack.zip

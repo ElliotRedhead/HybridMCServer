@@ -49,6 +49,7 @@ services:
     volumes:
       - "./instances/${DATA_FOLDER}:/data"
       - "./config-overrides/serverpauser.toml:/data/config/serverpauser.toml"
+      - "./config-overrides/server-icon.png:/data/server-icon.png:ro"
 
   backup:
       image: itzg/mc-backup
