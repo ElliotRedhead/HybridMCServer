@@ -64,6 +64,15 @@ resource "null_resource" "server_setup" {
       # 1. Wait for cloud-init (Prevents apt-get lock errors)
       cloud-init status --wait
 
+	  # Create a 2GB swap file to prevent OOM crashes on nano_2_0 (512MB RAM)
+      if [ ! -f "/swapfile" ]; then
+        sudo dd if="/dev/zero" of="/swapfile" bs=1M count=2048 status=progress
+        sudo chmod 600 "/swapfile"
+        sudo mkswap "/swapfile"
+        sudo swapon "/swapfile"
+        echo "/swapfile swap swap defaults 0 0" | sudo tee -a "/etc/fstab"
+      fi
+
       # 2. Install Docker if missing
       if ! command -v docker > /dev/null 2>&1; then
         curl -fsSL "https://get.docker.com" -o get-docker.sh
