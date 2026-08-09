@@ -96,6 +96,30 @@ mc-update: mc-backup ## Backup, pull latest image, and restart MC (triggers modp
 mc-logs: ## View logs for the Minecraft server
 	cd local && docker compose logs -f minecraft
 
+CONTAINER_NAME = "minecraft"
+TIME_WINDOW = "72h"
+.PHONY: mc-restart-history
+mc-restart-history:
+	@echo "=== Minecraft Container Restart History ==="
+	@echo "Total restarts in current session:"
+	@docker inspect -f "{{.RestartCount}}" "$(CONTAINER_NAME)" || echo "Container not found"
+	@echo "Timeline of recent starts and stops (last $(TIME_WINDOW)):"
+	@docker events --filter container="$(CONTAINER_NAME)" --filter event="start" --filter event="die" --since "$(TIME_WINDOW)" --until "$$(date +%s)" --format "Timestamp: {{.Time}} | Event: {{.Action}}"
+	@echo ""
+	@echo "Scanning historical daemon logs..."
+	@journalctl -u docker --since "$(TIME_WINDOW)" --no-pager | pv -l -N "Scanning Logs" | grep -i "$(CONTAINER_NAME)" | grep -i "restart" || echo "No historical restart logs found in daemon journal."
+
+.PHONY: minecraft-app-history
+minecraft-app-history:
+	@echo "=== Minecraft Application Restart History ==="
+	@echo "Scanning active container output for startup lines..."
+	# pv provides progress monitoring for the log stream read
+	@docker logs "$(CONTAINER_NAME)" 2>&1 | pv -l -N "Active Logs" | grep -iE "Starting minecraft server version|Starting Minecraft server on" || echo "No startup events found in active logs."
+	@echo ""
+	@echo "Scanning archived Minecraft log files inside the container..."
+	# pv tracks the incoming matching lines from the container back to the host
+	@docker exec "$(CONTAINER_NAME)" sh -c "zgrep -H -iE \"Starting minecraft server version|Starting Minecraft server on\" logs/*.log.gz logs/latest.log 2>/dev/null" | pv -l -N "Archive Logs" || echo "No archived startup logs found."
+
 .PHONY: mc-players
 mc-players: ## List currently online players
 	cd local && docker compose exec -i minecraft rcon-cli list

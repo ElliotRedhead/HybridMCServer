@@ -23,7 +23,7 @@ resource "aws_lightsail_instance" "vpn_proxy" {
   name              = "vpn-proxy"
   availability_zone = "eu-west-2b"
   blueprint_id      = "ubuntu_22_04"
-  bundle_id         = "nano_2_0"
+  bundle_id         = "nano_3_0"
   key_pair_name     = aws_lightsail_key_pair.vpn_key_pair.name
 }
 
