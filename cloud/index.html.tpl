@@ -22,10 +22,6 @@
   
   <div class="status-container">
     <div class="status-item">
-      <h2>Host PC</h2>
-      <span id="host-status">Loading...</span>
-    </div>
-    <div class="status-item">
       <h2>Tunnel</h2>
       <span id="tunnel-status">Loading...</span>
     </div>
@@ -57,13 +53,11 @@ async function checkStatus() {
       }
 
       try {
-        let hostOnline = false;
         let tunnelOnline = false;
         
         try {
           const healthRes = await fetch("/health.json");
           const healthData = await healthRes.json();
-          hostOnline = healthData.host === "online";
           tunnelOnline = healthData.tunnel === "online";
         } catch (err) {
           console.warn("Could not fetch health.json");
@@ -80,11 +74,6 @@ async function checkStatus() {
           console.warn("Could not fetch MC status");
         }
 
-        if (!hostOnline) {
-          tunnelOnline = false;
-          mcOnline = false;
-        }
-        
         if (!tunnelOnline) {
           mcOnline = false;
         }
@@ -100,7 +89,6 @@ async function checkStatus() {
           }
         };
 
-        setStatus("host-status", hostOnline);
         setStatus("tunnel-status", tunnelOnline);
         setStatus("server-status", mcOnline);
 

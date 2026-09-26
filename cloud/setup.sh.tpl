@@ -66,19 +66,15 @@ sudo tee "/usr/local/bin/healthcheck.sh" << "EOF"
 #!/bin/bash
 FRP_RES=$(curl -s -u "${frp_user}:${frp_pwd}" "http://127.0.0.1:7501/api/proxy/tcp/minecraft")
 
+# frpc registers the proxy only while it is connected, so this is the only
+# honest signal from home (the home PC can't be seen separately from the tunnel)
 if echo "$FRP_RES" | grep -q "\"status\":\"online\""; then
     TUNNEL="online"
-    HOST="online"
 else
     TUNNEL="offline"
-    if ping -c 1 -W 2 "${duckdns_domain}.duckdns.org" >/dev/null 2>&1; then
-        HOST="online"
-    else
-        HOST="offline"
-    fi
 fi
 
-echo "{\"host\": \"$HOST\", \"tunnel\": \"$TUNNEL\"}" > "/opt/mc-status/health.json"
+echo "{\"tunnel\": \"$TUNNEL\"}" > "/opt/mc-status/health.json"
 chmod 644 "/opt/mc-status/health.json"
 EOF
 
