@@ -14,7 +14,8 @@ services:
           cpus: '3.0'    # Limits Java to 3 cores (adjust based on your CPU)
     env_file:
       - ./config-overrides/minecraft-public.env  # Load first
-      - ./config-overrides/minecraft-private.env # Load second (Can include sensitive info)
+      - path: ./config-overrides/minecraft-private.env # Load second (Can include sensitive info)
+        required: false
     environment:
       EULA: "TRUE"
       TYPE: "AUTO_CURSEFORGE"
@@ -27,6 +28,8 @@ services:
       RCON_PORT: 25575
       RCON_PASSWORD: "${RCON_PASSWORD}"
       MODS: "https://www.curseforge.com/minecraft/mc-mods/serverpauser"
+      ICON: "${SERVER_ICON:-}" # Optional, e.g. /config-overrides/server-icon.png
+      OVERRIDE_ICON: "true"
 
       JVM_OPTS: >
         -XX:+UseG1GC
@@ -51,7 +54,7 @@ services:
     volumes:
       - "./instances/${DATA_FOLDER}:/data"
       - "./config-overrides/serverpauser.toml:/data/config/serverpauser.toml"
-      - "./config-overrides/server-icon.png:/data/server-icon.png:ro"
+      - "./config-overrides:/config-overrides:ro"
 
   backup:
       image: itzg/mc-backup:2026.9.2
