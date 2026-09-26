@@ -10,8 +10,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 12.5G    # Absolute ceiling to protect SSH/Host OS
-          cpus: '3.0'    # Limits Java to 3 cores (adjust based on your CPU)
+          memory: ${MC_MEM_LIMIT:-12.5G}    # Absolute ceiling to protect SSH/Host OS
+          cpus: ${MC_CPUS:-3.0}    # Limits Java to 3 cores (adjust based on your CPU)
     env_file:
       - ./config-overrides/minecraft-public.env  # Load first
       - path: ./config-overrides/minecraft-private.env # Load second (Can include sensitive info)
@@ -19,14 +19,14 @@ services:
     environment:
       EULA: "TRUE"
       TYPE: "AUTO_CURSEFORGE"
-      CF_API_KEY: "${CF_API_KEY}"
+      CF_API_KEY: "${CF_API_KEY:?CF_API_KEY must be set in local/.env}"
       CF_SLUG: "${MODPACK_SLUG}"
       REMOVE_OLD_MODS: "true"
       REMOVE_OLD_MODS_DEPTH: 1
-      INIT_MEMORY: "10G"
-      MAX_MEMORY: "10G"
+      INIT_MEMORY: "${MC_HEAP_SIZE:-10G}"
+      MAX_MEMORY: "${MC_HEAP_SIZE:-10G}"
       RCON_PORT: 25575
-      RCON_PASSWORD: "${RCON_PASSWORD}"
+      RCON_PASSWORD: "${RCON_PASSWORD:?RCON_PASSWORD must be set in local/.env}"
       MODS: "https://www.curseforge.com/minecraft/mc-mods/serverpauser"
       ICON: "${SERVER_ICON:-}" # Optional, e.g. /config-overrides/server-icon.png
       OVERRIDE_ICON: "true"
@@ -52,7 +52,7 @@ services:
         -XX:+UseStringDeduplication
 
     volumes:
-      - "./instances/${DATA_FOLDER}:/data"
+      - "./instances/${DATA_FOLDER:?DATA_FOLDER must be set in local/.env}:/data"
       - "./config-overrides/serverpauser.toml:/data/config/serverpauser.toml"
       - "./config-overrides:/config-overrides:ro"
 
@@ -63,11 +63,11 @@ services:
       environment:
         RCON_HOST: minecraft
         RCON_PORT: 25575
-        RCON_PASSWORD: "${RCON_PASSWORD}"
+        RCON_PASSWORD: "${RCON_PASSWORD:?RCON_PASSWORD must be set in local/.env}"
         BACKUP_INTERVAL: "1h"
         PRUNE_BACKUPS_DAYS: 7
         BACKUP_METHOD: restic
-        RESTIC_PASSWORD: "${RESTIC_PASSWORD}"
+        RESTIC_PASSWORD: "${RESTIC_PASSWORD:?RESTIC_PASSWORD must be set in local/.env}"
         RESTIC_REPOSITORY: "/backups"
       volumes:
         - "./instances/${DATA_FOLDER}:/data:ro"
