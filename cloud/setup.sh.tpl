@@ -58,8 +58,8 @@ sleep 3
 sudo docker run -d --name frps --restart always --network host -v "/etc/frp/frps.toml:/etc/frp/frps.toml" snowdreamtech/frps
 sleep 3
 
-sudo docker run -d --name duckdns --restart always --network host -e SUBDOMAINS="${duckdns_domain}" -e TOKEN="${duckdns_token}" lscr.io/linuxserver/duckdns:latest
-sleep 3
+# Point DuckDNS at the static IP (it never changes, so a one-off update is enough)
+curl -fsS "https://www.duckdns.org/update?domains=${duckdns_domain}&token=${duckdns_token}&ip=${static_ip}" | grep -q OK
 
 # 7. Setup Healthcheck Script
 sudo tee "/usr/local/bin/healthcheck.sh" << "EOF"

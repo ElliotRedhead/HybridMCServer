@@ -90,6 +90,7 @@ resource "null_resource" "server_setup" {
       frp_pwd        = var.frp_dashboard_creds.pwd
       duckdns_domain = var.duckdns_domain
       duckdns_token  = var.duckdns_token
+      static_ip      = aws_lightsail_static_ip.vpn_static_ip.ip_address
     })
     destination = "/home/ubuntu/setup.sh"
   }
