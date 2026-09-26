@@ -22,8 +22,8 @@ terraform {
 }
 
 provider "aws" {
-  region  = "eu-west-2"
-  profile = "terraform-lightsail"
+  region  = var.aws_region
+  profile = var.aws_profile
 }
 
 resource "tls_private_key" "vpn_key" {
@@ -44,7 +44,7 @@ resource "local_file" "ssh_key" {
 
 resource "aws_lightsail_instance" "vpn_proxy" {
   name              = "vpn-proxy"
-  availability_zone = "eu-west-2b"
+  availability_zone = var.availability_zone
   blueprint_id      = "ubuntu_22_04"
   bundle_id         = "nano_3_0"
   key_pair_name     = aws_lightsail_key_pair.vpn_key_pair.name
@@ -207,6 +207,24 @@ resource "aws_lightsail_instance_public_ports" "firewall" {
 
 output "public_ip" {
   value = aws_lightsail_static_ip.vpn_static_ip.ip_address
+}
+
+variable "aws_region" {
+  description = "AWS region for the Lightsail gateway (pick one close to your players)"
+  type        = string
+  default     = "eu-west-2"
+}
+
+variable "availability_zone" {
+  description = "Lightsail availability zone, must be in aws_region"
+  type        = string
+  default     = "eu-west-2b"
+}
+
+variable "aws_profile" {
+  description = "AWS CLI profile to use (null uses the default credential chain)"
+  type        = string
+  default     = null
 }
 
 variable "auth_token" {
