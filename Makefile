@@ -8,6 +8,8 @@ export
 # Only look up the IP in targets that use it, not every time make runs
 unexport GET_IP
 
+.DEFAULT_GOAL := help
+
 # Guard for targets that need the world folder from local/.env
 .PHONY: require-data-folder
 require-data-folder:
@@ -25,13 +27,12 @@ cloud-ssh: ## SSH into the Lightsail instance
 	ssh -i $(KEY_FILE) $(SSH_USER)@$(GET_IP)
 
 .PHONY: cloud-deploy
-cloud-deploy: ## Apply Terraform changes (Auto-Approve)
-	cd $(TF_DIR) && terraform apply -auto-approve
+cloud-deploy: ## Apply Terraform changes (shows the plan and asks for confirmation)
+	cd $(TF_DIR) && terraform init && terraform apply
 
 .PHONY: cloud-force-deploy
-cloud-force-deploy: ## Force recreate the instance
-	cd $(TF_DIR) && terraform taint aws_lightsail_instance.gateway
-	cd $(TF_DIR) && terraform apply -auto-approve
+cloud-force-deploy: ## Force recreate the instance (asks for confirmation)
+	cd $(TF_DIR) && terraform init && terraform apply -replace=aws_lightsail_instance.gateway
 
 .PHONY: cloud-force-refresh
 cloud-force-refresh: ## Force the cloud gateway to update status
@@ -106,7 +107,7 @@ mc-logs: ## View logs for the Minecraft server
 CONTAINER_NAME = "minecraft"
 TIME_WINDOW = "72h"
 .PHONY: mc-restart-history
-mc-restart-history:
+mc-restart-history: ## Show recent restarts of the Minecraft container
 	@echo "=== Minecraft Container Restart History ==="
 	@echo "Total restarts in current session:"
 	@docker inspect -f "{{.RestartCount}}" "$(CONTAINER_NAME)" || echo "Container not found"
@@ -117,7 +118,7 @@ mc-restart-history:
 	@journalctl -u docker --since "$(TIME_WINDOW)" --no-pager | pv -l -N "Scanning Logs" | grep -i "$(CONTAINER_NAME)" | grep -i "restart" || echo "No historical restart logs found in daemon journal."
 
 .PHONY: minecraft-app-history
-minecraft-app-history:
+minecraft-app-history: ## Show when the Minecraft server process last started
 	@echo "=== Minecraft Application Restart History ==="
 	@echo "Scanning active container output for startup lines..."
 	# pv provides progress monitoring for the log stream read
