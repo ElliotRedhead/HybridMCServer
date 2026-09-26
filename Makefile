@@ -3,8 +3,15 @@ KEY_FILE := $(TF_DIR)/id_rsa.pem
 SSH_USER := ubuntu
 GET_IP = $(shell cd $(TF_DIR) && terraform output -raw public_ip)
 
-include ./local/.env
+-include ./local/.env
 export
+# Only look up the IP in targets that use it, not every time make runs
+unexport GET_IP
+
+# Guard for targets that need the world folder from local/.env
+.PHONY: require-data-folder
+require-data-folder:
+	@if [ -z "$(DATA_FOLDER)" ]; then echo "Error: DATA_FOLDER is not set. Copy local/.env.template to local/.env and fill it in."; exit 1; fi
 
 # --- Cloud Targets ---
 
@@ -32,7 +39,7 @@ cloud-force-refresh: ## Force the cloud gateway to update status
 	ssh -o "StrictHostKeyChecking=no" -i $(KEY_FILE) $(SSH_USER)@$(GET_IP) "sudo /usr/local/bin/healthcheck.sh"
 
 .PHONY: cloud-refresh-modpack-version
-cloud-refresh-modpack-version: ## Pushes the modpack version to the AWS webserver
+cloud-refresh-modpack-version: require-data-folder ## Pushes the modpack version to the AWS webserver
 	@echo "Uploading modpack version to AWS..."
 	@if [ -f "./local/instances/$(DATA_FOLDER)/.install-curseforge.env" ]; then \
 		. "./local/instances/$(DATA_FOLDER)/.install-curseforge.env"; \
@@ -52,7 +59,7 @@ local-up: ## Start local Minecraft, Backup & Tunnel
 	$(MAKE) cloud-force-refresh
 
 .PHONY: mc-version
-mc-version: ## Outputs the current CurseForge modpack version
+mc-version: require-data-folder ## Outputs the current CurseForge modpack version
 	@echo "Checking modpack version..."
 	@if [ -f "./local/instances/$(DATA_FOLDER)/.install-curseforge.env" ]; then \
 		. "./local/instances/$(DATA_FOLDER)/.install-curseforge.env"; \
@@ -62,7 +69,7 @@ mc-version: ## Outputs the current CurseForge modpack version
 	fi
 
 .PHONY: mc-backup
-mc-backup: ## Create a manual pre-update tarball of the world and configs
+mc-backup: require-data-folder ## Create a manual pre-update tarball of the world and configs
 	@echo "Creating pre-update backup for $(DATA_FOLDER)..."
 	# Using RCON to force a world save before backup
 	cd local && docker compose exec -i minecraft rcon-cli save-all
@@ -125,7 +132,7 @@ mc-players: ## List currently online players
 	cd local && docker compose exec -i minecraft rcon-cli list
 
 .PHONY: mc-playtime
-mc-playtime: ## Calculate and display total playtime for all players
+mc-playtime: require-data-folder ## Calculate and display total playtime for all players
 	@echo "Fetching player playtime statistics..."
 	@for file in "./local/instances/$(DATA_FOLDER)/world/stats/"*.json; do \
 		if [ -f "$$file" ]; then \
