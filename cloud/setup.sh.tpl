@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-# 1. Wait for unattended-upgrades to release the apt lock (Prevents apt-get lock errors during Docker install)
+# 1. Wait for cloud-init and unattended-upgrades to release the apt lock (Prevents apt-get lock errors during Docker install)
+cloud-init status --wait
 while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
   echo "Waiting for apt locks to clear..."
   sleep 5
@@ -39,7 +40,11 @@ user = "${frp_user}"
 password = "${frp_pwd}"
 EOF
 
-# 5. Start Containers
+# 5. Move UI files
+[ -f "/home/ubuntu/index.html" ] && sudo mv "/home/ubuntu/index.html" "/opt/mc-status/index.html"
+[ -f "/home/ubuntu/Caddyfile" ] && sudo mv "/home/ubuntu/Caddyfile" "/opt/caddy/Caddyfile"
+
+# 6. Start Containers
 sudo docker rm -f status-web frps duckdns 2>/dev/null || true
 
 sudo docker run -d --name status-web --restart always --network host \
@@ -56,7 +61,7 @@ sleep 3
 sudo docker run -d --name duckdns --restart always --network host -e SUBDOMAINS="${duckdns_domain}" -e TOKEN="${duckdns_token}" lscr.io/linuxserver/duckdns:latest
 sleep 3
 
-# 6. Setup Healthcheck Script
+# 7. Setup Healthcheck Script
 sudo tee "/usr/local/bin/healthcheck.sh" << "EOF"
 #!/bin/bash
 FRP_RES=$(curl -s -u "${frp_user}:${frp_pwd}" "http://127.0.0.1:7501/api/proxy/tcp/minecraft")

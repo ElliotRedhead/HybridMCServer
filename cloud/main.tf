@@ -19,20 +19,48 @@ resource "local_file" "ssh_key" {
   file_permission = "0600"
 }
 
-data "cloudinit_config" "server_setup" {
-  gzip          = false
-  base64_encode = false
+resource "aws_lightsail_instance" "vpn_proxy" {
+  name              = "vpn-proxy"
+  availability_zone = "eu-west-2b"
+  blueprint_id      = "ubuntu_22_04"
+  bundle_id         = "nano_3_0"
+  key_pair_name     = aws_lightsail_key_pair.vpn_key_pair.name
+}
 
-  part {
-    content_type = "text/cloud-config"
-    content = templatefile("${path.module}/cloud-config.yaml.tpl", {
-      caddyfile_content = templatefile("${path.module}/Caddyfile.tpl", { duckdns_domain = var.duckdns_domain })
-      index_content     = templatefile("${path.module}/index.html.tpl", { duckdns_domain = var.duckdns_domain })
-    })
+resource "null_resource" "server_setup" {
+  depends_on = [
+    aws_lightsail_instance.vpn_proxy,
+    aws_lightsail_static_ip_attachment.attach,
+    aws_lightsail_instance_public_ports.firewall
+  ]
+
+  triggers = {
+    instance_id = aws_lightsail_instance.vpn_proxy.id
+    index_hash  = filemd5("${path.module}/index.html.tpl")
+    caddy_hash  = filemd5("${path.module}/Caddyfile.tpl")
+    setup_hash  = filemd5("${path.module}/setup.sh.tpl")
+    config_hash = nonsensitive(sha256(jsonencode([var.auth_token, var.frp_dashboard_creds, var.duckdns_domain, var.duckdns_token])))
   }
 
-  part {
-    content_type = "text/x-shellscript"
+  connection {
+    type        = "ssh"
+    user        = "ubuntu"
+    host        = aws_lightsail_static_ip.vpn_static_ip.ip_address
+    private_key = tls_private_key.vpn_key.private_key_pem
+    timeout     = "5m"
+  }
+
+  provisioner "file" {
+    content     = templatefile("${path.module}/index.html.tpl", { duckdns_domain = var.duckdns_domain })
+    destination = "/home/ubuntu/index.html"
+  }
+
+  provisioner "file" {
+    content     = templatefile("${path.module}/Caddyfile.tpl", { duckdns_domain = var.duckdns_domain })
+    destination = "/home/ubuntu/Caddyfile"
+  }
+
+  provisioner "file" {
     content = templatefile("${path.module}/setup.sh.tpl", {
       auth_token     = var.auth_token
       frp_user       = var.frp_dashboard_creds.user
@@ -40,23 +68,19 @@ data "cloudinit_config" "server_setup" {
       duckdns_domain = var.duckdns_domain
       duckdns_token  = var.duckdns_token
     })
+    destination = "/home/ubuntu/setup.sh"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "bash /home/ubuntu/setup.sh",
+      "rm -f /home/ubuntu/setup.sh"
+    ]
   }
 }
 
-resource "aws_lightsail_instance" "vpn_proxy" {
-  name              = "vpn-proxy"
-  availability_zone = "eu-west-2b"
-  blueprint_id      = "ubuntu_22_04"
-  bundle_id         = "nano_3_0"
-  key_pair_name     = aws_lightsail_key_pair.vpn_key_pair.name
-  user_data         = data.cloudinit_config.server_setup.rendered
-}
-
 resource "null_resource" "deploy_modpack" {
-  depends_on = [
-    aws_lightsail_instance.vpn_proxy,
-    aws_lightsail_static_ip_attachment.attach
-  ]
+  depends_on = [null_resource.server_setup]
 
   triggers = {
     instance_id = aws_lightsail_instance.vpn_proxy.id
@@ -72,8 +96,13 @@ resource "null_resource" "deploy_modpack" {
 }
 
 resource "null_resource" "upload_favicon" {
-  count = fileexists("${path.module}/favicon.ico") ? 1 : 0
-  depends_on = [aws_lightsail_instance.vpn_proxy]
+  count      = fileexists("${path.module}/favicon.ico") ? 1 : 0
+  depends_on = [null_resource.server_setup]
+
+  triggers = {
+    instance_id  = aws_lightsail_instance.vpn_proxy.id
+    favicon_hash = fileexists("${path.module}/favicon.ico") ? filemd5("${path.module}/favicon.ico") : ""
+  }
 
   connection {
     type        = "ssh"
