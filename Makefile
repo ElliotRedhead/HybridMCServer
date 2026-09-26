@@ -23,7 +23,7 @@ cloud-deploy: ## Apply Terraform changes (Auto-Approve)
 
 .PHONY: cloud-force-deploy
 cloud-force-deploy: ## Force recreate the instance
-	cd $(TF_DIR) && terraform taint aws_lightsail_instance.vpn_proxy
+	cd $(TF_DIR) && terraform taint aws_lightsail_instance.gateway
 	cd $(TF_DIR) && terraform apply -auto-approve
 
 .PHONY: cloud-force-refresh

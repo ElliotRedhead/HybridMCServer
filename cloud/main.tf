@@ -31,39 +31,39 @@ provider "aws" {
   profile = var.aws_profile
 }
 
-resource "tls_private_key" "vpn_key" {
+resource "tls_private_key" "gateway_key" {
   algorithm = "RSA"
   rsa_bits  = 2048
 }
 
-resource "aws_lightsail_key_pair" "vpn_key_pair" {
-  name       = "vpn-key-pair"
-  public_key = tls_private_key.vpn_key.public_key_openssh
+resource "aws_lightsail_key_pair" "gateway_key_pair" {
+  name       = "minecraft-gateway-key"
+  public_key = tls_private_key.gateway_key.public_key_openssh
 }
 
 resource "local_file" "ssh_key" {
-  content         = tls_private_key.vpn_key.private_key_pem
+  content         = tls_private_key.gateway_key.private_key_pem
   filename        = "${path.module}/id_rsa.pem"
   file_permission = "0600"
 }
 
-resource "aws_lightsail_instance" "vpn_proxy" {
-  name              = "vpn-proxy"
+resource "aws_lightsail_instance" "gateway" {
+  name              = "minecraft-gateway"
   availability_zone = var.availability_zone
   blueprint_id      = "ubuntu_22_04"
   bundle_id         = "nano_3_0"
-  key_pair_name     = aws_lightsail_key_pair.vpn_key_pair.name
+  key_pair_name     = aws_lightsail_key_pair.gateway_key_pair.name
 }
 
 resource "null_resource" "server_setup" {
   depends_on = [
-    aws_lightsail_instance.vpn_proxy,
+    aws_lightsail_instance.gateway,
     aws_lightsail_static_ip_attachment.attach,
     aws_lightsail_instance_public_ports.firewall
   ]
 
   triggers = {
-    instance_id = aws_lightsail_instance.vpn_proxy.id
+    instance_id = aws_lightsail_instance.gateway.id
     index_hash  = filemd5("${path.module}/index.html.tpl")
     caddy_hash  = filemd5("${path.module}/Caddyfile.tpl")
     setup_hash  = filemd5("${path.module}/setup.sh.tpl")
@@ -74,8 +74,8 @@ resource "null_resource" "server_setup" {
   connection {
     type        = "ssh"
     user        = "ubuntu"
-    host        = aws_lightsail_static_ip.vpn_static_ip.ip_address
-    private_key = tls_private_key.vpn_key.private_key_pem
+    host        = aws_lightsail_static_ip.gateway_static_ip.ip_address
+    private_key = tls_private_key.gateway_key.private_key_pem
     timeout     = "5m"
   }
 
@@ -96,7 +96,7 @@ resource "null_resource" "server_setup" {
       frp_pwd        = var.frp_dashboard_creds.pwd
       duckdns_domain = var.duckdns_domain
       duckdns_token  = var.duckdns_token
-      static_ip      = aws_lightsail_static_ip.vpn_static_ip.ip_address
+      static_ip      = aws_lightsail_static_ip.gateway_static_ip.ip_address
       caddy_image    = local.caddy_image
       frps_image     = local.frps_image
     })
@@ -115,7 +115,7 @@ resource "null_resource" "deploy_modpack" {
   depends_on = [null_resource.server_setup]
 
   triggers = {
-    instance_id = aws_lightsail_instance.vpn_proxy.id
+    instance_id = aws_lightsail_instance.gateway.id
   }
 
   provisioner "local-exec" {
@@ -132,15 +132,15 @@ resource "null_resource" "upload_favicon" {
   depends_on = [null_resource.server_setup]
 
   triggers = {
-    instance_id  = aws_lightsail_instance.vpn_proxy.id
+    instance_id  = aws_lightsail_instance.gateway.id
     favicon_hash = fileexists("${path.module}/favicon.ico") ? filemd5("${path.module}/favicon.ico") : ""
   }
 
   connection {
     type        = "ssh"
     user        = "ubuntu"
-    host        = aws_lightsail_static_ip.vpn_static_ip.ip_address
-    private_key = tls_private_key.vpn_key.private_key_pem
+    host        = aws_lightsail_static_ip.gateway_static_ip.ip_address
+    private_key = tls_private_key.gateway_key.private_key_pem
     timeout     = "5m"
   }
 
@@ -157,30 +157,30 @@ resource "null_resource" "upload_favicon" {
   }
 }
 
-resource "aws_lightsail_static_ip" "vpn_static_ip" {
+resource "aws_lightsail_static_ip" "gateway_static_ip" {
   name = "minecraft-static-ip"
 }
 
 resource "aws_lightsail_static_ip_attachment" "attach" {
-  static_ip_name = aws_lightsail_static_ip.vpn_static_ip.name
-  instance_name  = aws_lightsail_instance.vpn_proxy.name
+  static_ip_name = aws_lightsail_static_ip.gateway_static_ip.name
+  instance_name  = aws_lightsail_instance.gateway.name
 
   lifecycle {
     replace_triggered_by = [
-      aws_lightsail_instance.vpn_proxy
+      aws_lightsail_instance.gateway
     ]
   }
 }
 
 resource "aws_lightsail_instance_public_ports" "firewall" {
-  instance_name = aws_lightsail_instance.vpn_proxy.name
+  instance_name = aws_lightsail_instance.gateway.name
 
   depends_on = [aws_lightsail_static_ip_attachment.attach]
 
   # A rebuilt instance starts with default ports, so re-apply the rules
   lifecycle {
     replace_triggered_by = [
-      aws_lightsail_instance.vpn_proxy
+      aws_lightsail_instance.gateway
     ]
   }
 
@@ -234,7 +234,7 @@ resource "aws_lightsail_instance_public_ports" "firewall" {
 }
 
 output "public_ip" {
-  value = aws_lightsail_static_ip.vpn_static_ip.ip_address
+  value = aws_lightsail_static_ip.gateway_static_ip.ip_address
 }
 
 variable "aws_region" {
@@ -280,10 +280,10 @@ variable "frp_dashboard_creds" {
 
 resource "local_file" "home_config" {
   content = templatefile("${path.module}/frpc.tpl", {
-    server_addr = aws_lightsail_static_ip.vpn_static_ip.ip_address
+    server_addr = aws_lightsail_static_ip.gateway_static_ip.ip_address
     auth_token  = var.auth_token
   })
-  filename = "${path.module}/../local/frpc.toml"
+  filename        = "${path.module}/../local/frpc.toml"
   file_permission = "0600"
 }
 
