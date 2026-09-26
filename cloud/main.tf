@@ -21,6 +21,11 @@ terraform {
   }
 }
 
+locals {
+  caddy_image = "caddy:2.11.4-alpine"
+  frps_image  = "snowdreamtech/frps:0.71.0-debian"
+}
+
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
@@ -62,6 +67,7 @@ resource "null_resource" "server_setup" {
     index_hash  = filemd5("${path.module}/index.html.tpl")
     caddy_hash  = filemd5("${path.module}/Caddyfile.tpl")
     setup_hash  = filemd5("${path.module}/setup.sh.tpl")
+    images      = "${local.caddy_image} ${local.frps_image}"
     config_hash = nonsensitive(sha256(jsonencode([var.auth_token, var.frp_dashboard_creds, var.duckdns_domain, var.duckdns_token])))
   }
 
@@ -91,6 +97,8 @@ resource "null_resource" "server_setup" {
       duckdns_domain = var.duckdns_domain
       duckdns_token  = var.duckdns_token
       static_ip      = aws_lightsail_static_ip.vpn_static_ip.ip_address
+      caddy_image    = local.caddy_image
+      frps_image     = local.frps_image
     })
     destination = "/home/ubuntu/setup.sh"
   }

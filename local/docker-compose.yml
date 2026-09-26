@@ -52,7 +52,7 @@ services:
       - "./config-overrides/server-icon.png:/data/server-icon.png:ro"
 
   backup:
-      image: itzg/mc-backup
+      image: itzg/mc-backup:2026.9.2
       container_name: "minecraft-backup"
       restart: unless-stopped
       environment:
@@ -69,7 +69,7 @@ services:
         - "./backups/${DATA_FOLDER}:/backups/"
 
   frpc:
-    image: snowdreamtech/frpc
+    image: snowdreamtech/frpc:0.71.0-debian
     container_name: frpc
     restart: unless-stopped
     volumes:

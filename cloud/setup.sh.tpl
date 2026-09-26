@@ -52,10 +52,10 @@ sudo docker run -d --name status-web --restart always --network host \
   -v "/opt/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
   -v "/opt/caddy/data:/data" \
   -v "/opt/caddy/config:/config" \
-  caddy:alpine
+  ${caddy_image}
 sleep 3
 
-sudo docker run -d --name frps --restart always --network host -v "/etc/frp/frps.toml:/etc/frp/frps.toml" snowdreamtech/frps
+sudo docker run -d --name frps --restart always --network host -v "/etc/frp/frps.toml:/etc/frp/frps.toml" ${frps_image}
 sleep 3
 
 # Point DuckDNS at the static IP (it never changes, so a one-off update is enough)
