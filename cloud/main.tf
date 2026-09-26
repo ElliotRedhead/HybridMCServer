@@ -50,7 +50,7 @@ resource "local_file" "ssh_key" {
 resource "aws_lightsail_instance" "gateway" {
   name              = "minecraft-gateway"
   availability_zone = var.availability_zone
-  blueprint_id      = "ubuntu_22_04"
+  blueprint_id      = "ubuntu_24_04"
   bundle_id         = "nano_3_0"
   key_pair_name     = aws_lightsail_key_pair.gateway_key_pair.name
 }
