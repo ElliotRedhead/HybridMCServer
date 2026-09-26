@@ -33,12 +33,11 @@ graph LR
     subgraph Home [Home Server / Docker]
         FRP_C[FRP Client]
         MC[Minecraft Server :25565]
-        DDNS[DuckDNS Container]
     end
 
     FRP_S <== 4. Encrypted Tunnel ==> FRP_C
     FRP_C --> MC
-    DDNS -- 5. Updates IP if changed --> DNS
+    IP -. Set once at deploy .-> DNS
 ```
 
 ## Benefits
@@ -75,6 +74,8 @@ DuckDNS Account: A domain (e.g., "myserver.duckdns.org") and a Token.
 
 AWS IAM User: With LightsailFullAccess permissions.
 
+**Cost:** the gateway is a Lightsail `nano` instance, roughly US$5/month with a public IPv4 address (check current [Lightsail pricing](https://aws.amazon.com/lightsail/pricing/)). The static IP is free while attached.
+
 <details> <summary>Custom IAM Policy - LightsailFullAccess</summary>
 
 ```json
@@ -102,8 +103,7 @@ AWS IAM User: With LightsailFullAccess permissions.
 aws configure --profile "terraform-lightsail"
 ```
 
-Region: eu-west-2 (or your preference)
-Output: json
+Set `aws_profile = "terraform-lightsail"` in `cloud/terraform.tfvars` (next step) to use it. Without it, Terraform uses your default AWS credentials.
 
 2. Configure Terraform variables - Create your secret variables file.
 
@@ -111,59 +111,65 @@ Output: json
 cp cloud/terraform.tfvars.template cloud/terraform.tfvars
 ```
 
-Edit cloud/terraform.tfvars and add your DuckDNS Token, Domain, and Dashboard credentials.
+Edit cloud/terraform.tfvars and add your DuckDNS Token, Domain, and Dashboard credentials. The gateway defaults to `eu-west-2` (London); set `aws_region` and `availability_zone` to use a region closer to your players.
 
-3. Deploy Infrastructure - Terraform will provision the server, install Docker, set up Caddy, and start the tunnel server.
+3. Deploy Infrastructure - Terraform will provision the server, install Docker, set up Caddy, start the tunnel server and point your DuckDNS domain at the gateway's static IP. Review the plan and type `yes`. Create `local/.env` first (Phase 2, step 1): the first deploy also builds the client modpack, which needs your CurseForge settings.
 
 ```bash
-cd cloud
-terraform init
-terraform apply
+make cloud-deploy
 ```
+
+Changing the Caddyfile, status page, image versions or any secret re-provisions the gateway in place on the next `make cloud-deploy`.
 
 Verify: The public_ip output matches the IP on your DuckDNS dashboard.
 
-Note: Terraform generates an SSH key (id_rsa.pem) in the cloud/ folder. Keep this private.
+Note: Terraform generates an SSH key (id_rsa.pem) in the cloud/ folder, and the tunnel config (local/frpc.toml). Keep these private.
+
+> **Keep `cloud/terraform.tfstate` private.** Terraform state stores your tokens, dashboard password and the gateway's SSH private key in plain text. It is git-ignored; never commit or share it.
 
 ### Phase 2: The Game Server (Local)
 
-1. Configure Secrets - set up the tunnel client authentication.
+1. Configure the server - world folder, modpack and secrets.
 
 ```bash
 cd local
 cp .env.template .env
 ```
 
-Edit .env to match the tokens used in Terraform.
+Edit .env and set `DATA_FOLDER`, `MODPACK_SLUG`, `CF_API_KEY`, `RCON_PASSWORD` and `RESTIC_PASSWORD` (all required). You can also set the container's memory/CPU limits and a server icon there.
 
 2. Configure Game Rules & Whitelist - We use split configuration to keep secrets out of Git.
 
 local/config-overrides/minecraft-public.env: (Commit this) Game rules, MOTD, Difficulty.
 
-local/config-overrides/minecraft-private.env: (GitIgnored) Whitelist, Ops, Sensitive settings.
+local/config-overrides/minecraft-private.env: (GitIgnored, optional) Whitelist, Ops, Sensitive settings.
 
 3. Start the Server
 
 ```bash
-docker-compose up -d
+make local-up
 ```
 
-Check Logs: `docker-compose logs -f`
+Check Logs: `make mc-logs` and `make frpc-logs`
 
-Wait for: Done! (Server Ready) and [ssh] start proxy success (Tunnel Ready).
+Wait for: Done! (Server Ready) and [minecraft] start proxy success (Tunnel Ready).
+
+Run `make` (or `make help`) to list all available commands.
 
 ### Phase 3: Modpack Distribution
 
 To ensure your players have the exact mods and configs as your server:
 
-1. Download the base modpack zip (e.g., ATM10) directly from the CurseForge website.
-2. Place it in the `local/` directory and name it `base-modpack.zip`.
-3. Drop any extra client-side `.jar` files into `local/client-mods/`.
-4. Deploy the modpack to the web server:
+1. Drop any extra client-side `.jar` files into `local/client-mods/`.
+2. Deploy the modpack to the web server:
 
 ```bash
 make deploy-modpack
 ```
+
+This downloads the latest client pack for `MODPACK_SLUG` from the CurseForge API, adds your `config-overrides/` and client mods, and uploads the zip to the gateway. It also runs automatically when the gateway is first created.
+
+Optionally, put a `favicon.ico` in `cloud/` for the status page (uploaded on the next `make cloud-deploy`).
 
 Players can now visit `https://yourdomain.duckdns.org` to check server status and download the compiled modpack.
 
@@ -200,70 +206,58 @@ Add names to OPS= or WHITELIST=.
 Apply changes:
 
 ```bash
-docker-compose up -d
+make local-up
 ```
 
 ### How to Change Modpacks
 
 Switching from one modpack to another requires clearing old mod files while preserving your world data.
 
-1. Stop the server: `docker-compose down`
+1. Stop the server: `cd local && docker compose down`
 2. Update `MODPACK_SLUG` and `DATA_FOLDER` in your `.env` file to point to the new pack.
-3. Download the new client zip from CurseForge and replace `local/base-modpack.zip`.
-4. Run `make deploy-modpack` to update the web download.
-5. Start the server: `docker-compose up -d`
+3. Run `make deploy-modpack` to update the web download.
+4. Start the server: `make local-up`
+
+### Updating the Server and Modpack
+
+```bash
+make mc-update
+```
+
+This takes a manual backup, pulls the latest `itzg/minecraft-server:java21` image and restarts the server, which installs the newest version of the modpack. Once the server is up it updates the version shown on the status page. Run `make deploy-modpack` afterwards so players can download the matching client pack.
+
+### Dependency Updates
+
+The gateway images (Caddy, frps), the local frpc and backup images, and the Terraform providers are pinned to exact versions. [Renovate](https://docs.renovatebot.com/) keeps them current: install the [Renovate GitHub app](https://github.com/apps/renovate) on your fork and it opens a PR each week when something has an update (frps and frpc are always bumped together). To apply one:
+
+1. Merge the PR and pull it locally.
+2. Gateway images or providers: run `make cloud-deploy`.
+3. Local images: run `make local-up`.
+
+The server image itself follows the rolling `java21` tag and is updated with `make mc-update` instead.
+
+### Backups
+
+The `backup` container takes an encrypted [restic](https://restic.net/) snapshot of the world every hour and keeps 7 days of them, in `local/backups/<DATA_FOLDER>/`. `make mc-backup` (also run by `make mc-update`) additionally writes a full tarball to `local/manual-backups/`.
+
+Backups are stored on the same disk as the server. For protection against disk failure, change the `./backups` volume in `local/docker-compose.yml` to a path on another drive (or sync `local/backups/` elsewhere). Keep your `RESTIC_PASSWORD`: backups can't be restored without it.
 
 ### How to Restore World Backups
 
-Backups are automatically generated by the backup container and stored in local/backups/.
-
-1. Stop the server
+To restore the latest snapshot (replace `atm10` with your `DATA_FOLDER`):
 
 ```bash
-docker-compose down
+cd local
+docker compose down
+docker compose run --rm --no-deps --entrypoint restic -v "$PWD/restore:/restore" backup restore latest --target /restore
+mv instances/atm10 instances/atm10.old
+sudo mv restore instances/atm10
+cd .. && make local-up
 ```
 
-2. Locate the backup
+To restore an older snapshot, list them by replacing `restore latest --target /restore` with `snapshots`, then use the snapshot ID instead of `latest`.
 
-```bash
-cd local/backups
-ls -lh
-```
-
-Example file: 2026-02-08_12-00-00.tgz
-
-3. Move or delete the current world folder to prevent file conflicts.
-
-```bash
-cd ../minecraft-data
-mv world ../corrupted/
-```
-
-OR
-
-```bash
-sudo rm -rf world
-```
-
-4. Extract the backup
-
-```bash
-# Adjust the filename below to match your backup
-sudo tar -xzvf ../backups/2026-02-08_12-00-00.tgz -C .
-```
-
-5. Fix permissions - Files extracted via sudo are owned by root. The Minecraft container runs as a specific user (UID 1000) and will crash if it cannot read them.
-
-```bash
-sudo chown -R 1000:1000 .
-```
-
-6. Restart server
-
-```bash
-cd ..
-docker-compose up -d
-```
+To restore a manual tarball instead, stop the server, move `local/instances/<DATA_FOLDER>` aside and run `tar -xzf local/manual-backups/backup_<date>.tar.gz` from the repo root.
 
 ### Common Issues
 
@@ -271,4 +265,4 @@ docker-compose up -d
 
 "Unknown Host": DNS propagation lag. Wait 5 mins or try the raw IP.
 
-Wrong IP in DuckDNS/Lightsail: Run `make cloud-apply` again to force an update.
+Wrong IP in DuckDNS: Re-run the gateway setup, which sets DuckDNS again: `cd cloud && terraform apply -replace=null_resource.server_setup`.
