@@ -165,43 +165,62 @@ resource "aws_lightsail_static_ip_attachment" "attach" {
 
 resource "aws_lightsail_instance_public_ports" "firewall" {
   instance_name = aws_lightsail_instance.vpn_proxy.name
-  
-  depends_on = [ aws_lightsail_static_ip_attachment.attach ]
 
-  port_info {
-    protocol  = "tcp"
-    from_port = 22
-    to_port   = 22
+  depends_on = [aws_lightsail_static_ip_attachment.attach]
+
+  # A rebuilt instance starts with default ports, so re-apply the rules
+  lifecycle {
+    replace_triggered_by = [
+      aws_lightsail_instance.vpn_proxy
+    ]
   }
 
   port_info {
-    protocol  = "tcp"
-    from_port = 80
-    to_port   = 80
+    protocol   = "tcp"
+    from_port  = 22
+    to_port    = 22
+    cidrs      = ["0.0.0.0/0"]
+    ipv6_cidrs = ["::/0"]
   }
 
   port_info {
-    protocol  = "tcp"
-    from_port = 443
-    to_port   = 443
+    protocol   = "tcp"
+    from_port  = 80
+    to_port    = 80
+    cidrs      = ["0.0.0.0/0"]
+    ipv6_cidrs = ["::/0"]
   }
 
   port_info {
-    protocol  = "tcp"
-    from_port = 7000
-    to_port   = 7000
+    protocol   = "tcp"
+    from_port  = 443
+    to_port    = 443
+    cidrs      = ["0.0.0.0/0"]
+    ipv6_cidrs = ["::/0"]
   }
 
   port_info {
-    protocol  = "tcp"
-    from_port = 7500
-    to_port   = 7500
+    protocol   = "tcp"
+    from_port  = 7000
+    to_port    = 7000
+    cidrs      = ["0.0.0.0/0"]
+    ipv6_cidrs = ["::/0"]
   }
 
   port_info {
-    protocol  = "tcp"
-    from_port = 25565
-    to_port   = 25565
+    protocol   = "tcp"
+    from_port  = 7500
+    to_port    = 7500
+    cidrs      = ["0.0.0.0/0"]
+    ipv6_cidrs = ["::/0"]
+  }
+
+  port_info {
+    protocol   = "tcp"
+    from_port  = 25565
+    to_port    = 25565
+    cidrs      = ["0.0.0.0/0"]
+    ipv6_cidrs = ["::/0"]
   }
 }
 
