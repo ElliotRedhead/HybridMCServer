@@ -1,3 +1,5 @@
+name: minecraft
+
 services:
   minecraft:
     image: "itzg/minecraft-server:java21"
@@ -70,7 +72,7 @@ services:
 
   frpc:
     image: snowdreamtech/frpc:0.71.0-debian
-    container_name: frpc
+    container_name: minecraft-frpc
     restart: unless-stopped
     volumes:
       - ./frpc.toml:/etc/frp/frpc.toml
