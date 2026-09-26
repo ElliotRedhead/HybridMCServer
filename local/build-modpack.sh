@@ -1,3 +1,4 @@
+#!/bin/bash
 echo "Building client modpack..."
 BUILD_DIR="modpack_build"
 BASE_ZIP="base-modpack.zip"
