@@ -22,7 +22,7 @@ terraform {
 }
 
 locals {
-  caddy_image = "caddy:2.11.4-alpine"
+  caddy_image = "caddy:2.11.7-alpine"
   frps_image  = "snowdreamtech/frps:0.71.0-debian"
 }
 
