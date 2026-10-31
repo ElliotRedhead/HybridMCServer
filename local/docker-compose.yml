@@ -57,7 +57,7 @@ services:
       - "./config-overrides:/config-overrides:ro"
 
   backup:
-      image: itzg/mc-backup:2026.9.2
+      image: itzg/mc-backup:2026.10.3
       container_name: "minecraft-backup"
       restart: unless-stopped
       environment:
